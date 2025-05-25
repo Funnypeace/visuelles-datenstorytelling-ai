@@ -1,0 +1,50 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visuelles Daten-Storytelling AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {"50":"#eff6ff","100":"#dbeafe","200":"#bfdbfe","300":"#93c5fd","400":"#60a5fa","500":"#3b82f6","600":"#2563eb","700":"#1d4ed8","800":"#1e40af","900":"#1e3a8a","950":"#172554"},
+            secondary: {"50":"#f8fafc","100":"#f1f5f9","200":"#e2e8f0","300":"#cbd5e1","400":"#94a3b8","500":"#64748b","600":"#475569","700":"#334155","800":"#1e293b","900":"#0f172a","950":"#020617"}
+          }
+        }
+      }
+    }
+  </script>
+<script type="importmap">
+{
+  "imports": {
+    "jspdf": "https://esm.sh/jspdf@^3.0.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "react": "https://esm.sh/react@^19.1.0",
+    "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
+    "recharts": "https://esm.sh/recharts@^2.15.3",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "papaparse": "https://esm.sh/papaparse@^5.5.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.0.1"
+  }
+}
+</script>
+</head>
+<body class="bg-secondary-100">
+  <div id="root"></div>
+  <!--
+    Abhängigkeiten wie PapaParse, XLSX, Recharts, html2canvas und jsPDF
+    werden typischerweise über npm/yarn verwaltet und von einem Bundler (z.B. Vite, Webpack) verarbeitet.
+    Für eine eigenständige index.html könnten CDNs verwendet werden, aber das ist für komplexe Apps
+    mit ES6-Modulen weniger ideal. Die bereitgestellten TSX-Dateien verwenden ES6-Importe.
+    Für die Gemini API wird davon ausgegangen, dass `process.env.API_KEY` in der Build-/Laufzeitumgebung verfügbar ist.
+  -->
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
+<link rel="stylesheet" href="index.css">
+<script src="index.tsx" type="module"></script>

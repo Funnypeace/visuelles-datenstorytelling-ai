@@ -1,0 +1,5 @@
+{
+  "name": "Visuelles Daten-Storytelling AI",
+  "description": "Eine React-Anwendung, die hochgeladene Datensätze (Excel, CSV) mithilfe der Gemini-API analysiert und automatisch interaktive Dashboards mit Visualisierungen, Trends und Empfehlungen erstellt.",
+  "requestFramePermissions": []
+}
