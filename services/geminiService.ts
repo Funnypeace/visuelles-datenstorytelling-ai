@@ -34,7 +34,7 @@ const constructGeminiPrompt = (
       : sampleString;
 
   return `
-Du bist ein KI-Datenanalyst und Storytelling-Experte. Deine Aufgabe ist es, **ausschließlich** ein gültiges JSON**-Dokument** auszugeben, **ohne** weitere Erklärungen oder Klartext.  
+Du bist ein KI-Datenanalyst und Storytelling-Experte. Deine Aufgabe ist es, **ausschließlich** ein gültiges JSON-Dokument auszugeben, **ohne** weitere Erklärungen oder Klartext.  
 Gib exakt dieses Objekt zurück:
 
 \`\`\`json
@@ -106,7 +106,6 @@ export const analyzeDataWithGemini = async (
     }
     return parsed;
   } catch (err: any) {
-    // Fehlermeldung aufbereiten
     let msg = "Fehler bei der Kommunikation mit der KI. ";
     if (err.message) msg += err.message;
     if (err instanceof SyntaxError) {
@@ -116,4 +115,56 @@ export const analyzeDataWithGemini = async (
   }
 };
 
-// Bei Bedarf deine Chat-Funktion analog anpassen, damit sie ebenfalls nur reinen JSON-Output fordert.
+/**
+ * Einfache Chat-Funktion, um fragen zu stellen. Liefert reinen Text zurück.
+ */
+export const askGeminiAboutData = async (
+  parsedData: ParsedData[],
+  fileName: string,
+  question: string
+): Promise<string> => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Gemini API Key ist nicht konfiguriert.");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const sample = parsedData.slice(0, MAX_SAMPLE_ROWS_FOR_GEMINI);
+  const headers = sample.length ? Object.keys(sample[0]) : [];
+
+  const prompt = `
+Du bist ein professioneller Datenanalyst. Antworte **ausschließlich** auf Basis der folgenden Tabellendaten (${fileName}):
+
+\`\`\`json
+${JSON.stringify(sample, null, 2)}
+\`\`\`
+
+Spaltenüberschriften: ${headers.join(", ")}
+
+Frage des Nutzers:
+${question}
+
+Wenn die Daten nicht ausreichen, sage ehrlich, dass du nicht genug Informationen hast.
+`;
+
+  try {
+    const res = await ai.models.generateContent({
+      model: GEMINI_MODEL_TEXT,
+      contents: prompt,
+      config: {
+        responseMimeType: "text/plain",
+        temperature: 0.3,
+        topP: 0.9,
+        topK: 32,
+      },
+    });
+
+    let text = res.text.trim();
+    if (text.startsWith("```")) {
+      text = text.replace(/^```[\w]*\s*/, "").replace(/```$/, "").trim();
+    }
+    return text;
+  } catch (err: any) {
+    let msg = "Fehler bei der KI-Antwort. ";
+    if (err.message) msg += err.message;
+    throw new Error(msg);
+  }
+};
