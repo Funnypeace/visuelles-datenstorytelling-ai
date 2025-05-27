@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai"; // <--- GANZ OBEN! (Stelle sicher, dass das Paket installiert ist)
+import { GoogleGenAI } from "@google/genai";
 import type { ParsedData, AnalysisResult, GeminiAnalysisResponseSchema } from '../types';
 import { MAX_SAMPLE_ROWS_FOR_GEMINI, MAX_PROMPT_CHARS_ESTIMATE } from '../constants';
 
@@ -71,7 +71,7 @@ export const analyzeDataWithGemini = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: modelName || "gemini-1.0-pro",
+      model: modelName || "gemini-pro", // <--- HIER KORRIGIERT!
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -141,7 +141,7 @@ Antworte prägnant und beziehe dich ausschließlich auf diese Tabelle. Wenn du d
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-1.0-pro",
+      model: "gemini-pro", // <--- HIER KORRIGIERT!
       contents: prompt,
       config: {
         responseMimeType: "text/plain",
