@@ -12,8 +12,9 @@ import html2canvas from 'html2canvas';
 import { insertAnalysis, getAllAnalyses } from './services/analysisService';
 import AnalysisHistory from './components/AnalysisHistory';
 import DataChat from './components/DataChat';
+import { PdfChat } from './components/PdfChat'; // <--- NEU!
 
-type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history' | 'chat';
+type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history' | 'chat' | 'pdfchat'; // <--- NEU
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('upload');
@@ -23,6 +24,9 @@ const App: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [historyEntries, setHistoryEntries] = useState<any[]>([]);
   const dashboardRef = useRef<HTMLDivElement>(null);
+
+  // PDF-Chat State
+  const [currentPdfChatId, setCurrentPdfChatId] = useState<string | null>(null);
 
   const resetState = () => {
     setCurrentView('upload');
@@ -157,6 +161,18 @@ const App: React.FC = () => {
     }
   };
 
+  // PDFCHAT: Öffnen
+  const handleOpenPdfChat = (chatId: string) => {
+    setCurrentPdfChatId(chatId);
+    setCurrentView('pdfchat');
+  };
+
+  // PDFCHAT: Schließen (zurück zum Upload, du kannst es anpassen)
+  const handleClosePdfChat = () => {
+    setCurrentPdfChatId(null);
+    setCurrentView('upload');
+  };
+
   return (
     <div className="min-h-screen bg-secondary-100 text-secondary-800 flex flex-col">
       <header className="bg-primary-600 text-white p-6 shadow-md">
@@ -186,6 +202,16 @@ const App: React.FC = () => {
               automatisch ein interaktives Dashboard mit Visualisierungen, Trends und Empfehlungen.
             </p>
             <FileUpload onFileUpload={handleFileUpload} />
+
+            {/* TEST-BUTTON FÜR PDF-CHAT */}
+            <div className="mt-6">
+              <button
+                onClick={() => handleOpenPdfChat('DEMO_CHAT_ID')}
+                className="px-4 py-2 bg-secondary-600 text-white rounded-md"
+              >
+                Test: PDF-Chat öffnen (Demo)
+              </button>
+            </div>
           </div>
         )}
 
@@ -235,6 +261,23 @@ const App: React.FC = () => {
               </button>
             </div>
             <DataChat onAsk={handleAskQuestion} />
+          </div>
+        )}
+
+        {currentView === 'pdfchat' && currentPdfChatId && (
+          <div>
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={handleClosePdfChat}
+                className="px-4 py-2 bg-secondary-500 text-white font-semibold rounded-lg shadow-md hover:bg-secondary-700 transition duration-150"
+              >
+                Zurück
+              </button>
+            </div>
+            <PdfChat
+              chatId={currentPdfChatId}
+              apiKey={import.meta.env.VITE_GEMINI_API_KEY!}
+            />
           </div>
         )}
 
