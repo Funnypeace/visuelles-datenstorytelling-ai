@@ -12,13 +12,25 @@ import {
 } from "../constants";
 
 /**
- * Baut den Prompt so auf, dass Gemini *ausschließlich* JSON ausgibt
- * und zwar exakt nach folgendem Schema:
+ * Baut den Prompt so auf, dass Gemini **ausschließlich** dieses JSON liefert:
+ *
  * {
  *   "summaryText": string,
  *   "keyInsights": string[],
+ *   "chartSuggestions": [
+ *     {
+ *       "type": "LineChart"|"BarChart"|"PieChart"|"ScatterChart",
+ *       "title": string,
+ *       "dataKeys": { x?:string; y?:string|string[]; name?:string; value?:string; z?:string },
+ *       "description": string
+ *     },
+ *     ...
+ *   ],
  *   "actionableRecommendations": string[],
- *   "visualizationThemeSuggestion": string
+ *   "visualizationThemeSuggestion": {
+ *     "description": string,
+ *     "suggestedChartTypeForTheme": string
+ *   }
  * }
  */
 const constructGeminiPrompt = (
@@ -34,22 +46,40 @@ const constructGeminiPrompt = (
       : sampleString;
 
   return `
-Du bist ein KI-Datenanalyst und Storytelling-Experte. Deine Aufgabe ist es, **ausschließlich** ein gültiges JSON-Dokument auszugeben, **ohne** weitere Erklärungen oder Klartext.  
+Du bist ein KI-Datenanalyst und Storytelling-Experte. Deine Aufgabe ist es, **ausschließlich** ein gültiges JSON-Dokument zurückzugeben, **ohne** zusätzliche Erklärungen im Klartext.  
 Gib exakt dieses Objekt zurück:
 
 \`\`\`json
 {
   "summaryText": "Kurze Zusammenfassung der Analyse",
   "keyInsights": ["Insight 1", "Insight 2", "..."],
+  "chartSuggestions": [
+    {
+      "type": "LineChart",
+      "title": "Titel des Diagramms",
+      "dataKeys": {
+        "x": "Spaltenname für X-Achse",
+        "y": "Spaltenname für Y-Achse oder Array von Spaltennamen",
+        "name": "Spaltenname für Kategorien (PieChart)",
+        "value": "Spaltenname für Werte (PieChart)",
+        "z": "Spaltenname für Punktgröße (ScatterChart, optional)"
+      },
+      "description": "Kurze Erläuterung des Diagramms"
+    }
+    // ...ggf. weitere Objekte
+  ],
   "actionableRecommendations": ["Empfehlung 1", "Empfehlung 2", "..."],
-  "visualizationThemeSuggestion": "z.B. 'dark', 'light', 'pastel', ..."
+  "visualizationThemeSuggestion": {
+    "description": "z.B. 'Nutze Pastellfarben für Übersichtlichkeit'",
+    "suggestedChartTypeForTheme": "BarChart"
+  }
 }
 \`\`\`
 
 **Datei:** \`${fileName}\`  
 **Spaltenüberschriften:** ${fullDataHeaders.join(", ")}
 
-**Daten (Beispiel, ggf. gekürzt):**
+**Daten (ggf. gekürzt):**
 \`\`\`json
 ${truncated}
 \`\`\`
@@ -59,7 +89,7 @@ ${truncated}
 2. Ausreißer und mögliche Ursachen  
 3. Korrelationen zwischen Spalten  
 
-Fülle die Felder **summaryText**, **keyInsights**, **actionableRecommendations** und **visualizationThemeSuggestion** sorgfältig aus.
+Fülle alle Felder **summaryText**, **keyInsights**, **chartSuggestions**, **actionableRecommendations** und **visualizationThemeSuggestion** sorgfältig aus.
 `;
 };
 
@@ -88,22 +118,24 @@ export const analyzeDataWithGemini = async (
       },
     });
 
-    // Entferne JSON-Fences, falls vorhanden
     let text = res.text.trim();
     if (text.startsWith("```")) {
       text = text.replace(/^```(?:json)?\s*/, "").replace(/```$/, "").trim();
     }
 
     const parsed = JSON.parse(text) as GeminiAnalysisResponseSchema;
-    // Validieren
+
+    // Validierung
     if (
-      !parsed.summaryText ||
+      typeof parsed.summaryText !== "string" ||
       !Array.isArray(parsed.keyInsights) ||
+      !Array.isArray(parsed.chartSuggestions) ||
       !Array.isArray(parsed.actionableRecommendations) ||
-      !parsed.visualizationThemeSuggestion
+      typeof parsed.visualizationThemeSuggestion !== "object"
     ) {
-      throw new Error("Antwort der KI hat nicht das erwartete JSON-Schema.");
+      throw new Error("Die Antwort der KI hat nicht das erwartete JSON-Schema.");
     }
+
     return parsed;
   } catch (err: any) {
     let msg = "Fehler bei der Kommunikation mit der KI. ";
@@ -116,10 +148,10 @@ export const analyzeDataWithGemini = async (
 };
 
 /**
- * Einfache Chat-Funktion, um fragen zu stellen. Liefert reinen Text zurück.
+ * Einfache Chat-Funktion für Nachfragen, liefert reinen Text zurück.
  */
 export const askGeminiAboutData = async (
-  parsedData: ParsedData[],
+  data: ParsedData[],
   fileName: string,
   question: string
 ): Promise<string> => {
@@ -127,11 +159,11 @@ export const askGeminiAboutData = async (
   if (!apiKey) throw new Error("Gemini API Key ist nicht konfiguriert.");
 
   const ai = new GoogleGenAI({ apiKey });
-  const sample = parsedData.slice(0, MAX_SAMPLE_ROWS_FOR_GEMINI);
+  const sample = data.slice(0, MAX_SAMPLE_ROWS_FOR_GEMINI);
   const headers = sample.length ? Object.keys(sample[0]) : [];
 
   const prompt = `
-Du bist ein professioneller Datenanalyst. Antworte **ausschließlich** auf Basis der folgenden Tabellendaten (${fileName}):
+Du bist ein professioneller Datenanalyst. Antworte **ausschließlich** anhand der folgenden Tabellendaten (${fileName}):
 
 \`\`\`json
 ${JSON.stringify(sample, null, 2)}
@@ -139,10 +171,9 @@ ${JSON.stringify(sample, null, 2)}
 
 Spaltenüberschriften: ${headers.join(", ")}
 
-Frage des Nutzers:
-${question}
+Frage: ${question}
 
-Wenn die Daten nicht ausreichen, sage ehrlich, dass du nicht genug Informationen hast.
+Wenn du nicht genug Daten hast, sag ehrlich, dass die Informationen nicht ausreichen.
 `;
 
   try {
