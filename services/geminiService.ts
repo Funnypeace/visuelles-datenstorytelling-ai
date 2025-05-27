@@ -5,37 +5,64 @@ import type {
   AnalysisResult,
   GeminiAnalysisResponseSchema,
 } from "../types";
-import { GEMINI_MODEL_TEXT } from "../constants";
-
-/** Hilfsfunktion: aggregiert Datum/Region auf Monats-Umsatz */
-function aggregateByMonthAndRegion(data: ParsedData): {
-  month: string;
-  region: string;
-  revenue: number;
-}[] {
-  const map: Record<string, { month: string; region: string; revenue: number }> = {};
-
-  data.forEach((row) => {
-    // Je nach Spalten-Name anpassen, hier: Datum, Region, Umsatz
-    const rawDate = String(row["Datum"] ?? row["date"] ?? "");
-    const month = rawDate.slice(0, 7); // "YYYY-MM"
-    const region = String(row["Region"] ?? row["region"] ?? "");
-    const revenue = Number(row["Umsatz"] ?? row["revenue"] ?? 0);
-
-    const key = `${month}|${region}`;
-    if (!map[key]) {
-      map[key] = { month, region, revenue: 0 };
-    }
-    map[key].revenue += revenue;
-  });
-
-  return Object.values(map);
-}
+import {
+  MAX_SAMPLE_ROWS_FOR_GEMINI,
+  MAX_PROMPT_CHARS_ESTIMATE,
+  GEMINI_MODEL_TEXT,
+} from "../constants";
 
 /**
- * Originale Analyse-Funktion bleibt unverändert,
- * wenn Du hier gar nichts ändern willst, kannst Du sie so belassen.
+ * Baut den Prompt so auf, dass Gemini *ausschließlich* JSON ausgibt
+ * und zwar exakt nach folgendem Schema:
+ * {
+ *   "summaryText": string,
+ *   "keyInsights": string[],
+ *   "actionableRecommendations": string[],
+ *   "visualizationThemeSuggestion": string
+ * }
  */
+const constructGeminiPrompt = (
+  dataSample: ParsedData[],
+  fullDataHeaders: string[],
+  fileName: string
+): string => {
+  const sampleString = JSON.stringify(dataSample, null, 2);
+  const maxLen = MAX_PROMPT_CHARS_ESTIMATE * 0.5;
+  const truncated =
+    sampleString.length > maxLen
+      ? sampleString.slice(0, maxLen) + "\n... (gekürzt)"
+      : sampleString;
+
+  return `
+Du bist ein KI-Datenanalyst und Storytelling-Experte. Deine Aufgabe ist es, **ausschließlich** ein gültiges JSON**-Dokument** auszugeben, **ohne** weitere Erklärungen oder Klartext.  
+Gib exakt dieses Objekt zurück:
+
+\`\`\`json
+{
+  "summaryText": "Kurze Zusammenfassung der Analyse",
+  "keyInsights": ["Insight 1", "Insight 2", "..."],
+  "actionableRecommendations": ["Empfehlung 1", "Empfehlung 2", "..."],
+  "visualizationThemeSuggestion": "z.B. 'dark', 'light', 'pastel', ..."
+}
+\`\`\`
+
+**Datei:** \`${fileName}\`  
+**Spaltenüberschriften:** ${fullDataHeaders.join(", ")}
+
+**Daten (Beispiel, ggf. gekürzt):**
+\`\`\`json
+${truncated}
+\`\`\`
+
+**Analyse-Fokus:**
+1. Zentrale Trends (Wachstum, Rückgang, Saisonalität)  
+2. Ausreißer und mögliche Ursachen  
+3. Korrelationen zwischen Spalten  
+
+Fülle die Felder **summaryText**, **keyInsights**, **actionableRecommendations** und **visualizationThemeSuggestion** sorgfältig aus.
+`;
+};
+
 export const analyzeDataWithGemini = async (
   data: ParsedData[],
   fileName: string,
@@ -45,68 +72,48 @@ export const analyzeDataWithGemini = async (
   if (!apiKey) throw new Error("Gemini API Key ist nicht konfiguriert.");
 
   const ai = new GoogleGenAI({ apiKey });
-  // Behält hier das Sampling wie gehabt bei
-  const sample = data.slice(0, 20);
+  const sample = data.slice(0, MAX_SAMPLE_ROWS_FOR_GEMINI);
   const headers = data.length ? Object.keys(data[0]) : [];
-  const prompt = `...`; // Dein bestehender Prompt-Builder
+  const prompt = constructGeminiPrompt(sample, headers, fileName);
 
-  const res = await ai.models.generateContent({
-    model: modelName || GEMINI_MODEL_TEXT,
-    contents: prompt,
-    config: { responseMimeType: "application/json", temperature: 0.3 },
-  });
-  // … Rest deiner parse-/Fehler‐Logik …
-};
+  try {
+    const res = await ai.models.generateContent({
+      model: modelName || GEMINI_MODEL_TEXT,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 32,
+      },
+    });
 
-/**
- * Angepasste Chat-Funktion: liefert reinen Text und
- * berechnet intern den prozentualen Rückgang von Feb→März.
- */
-export const askGeminiAboutData = async (
-  parsedData: ParsedData[],
-  fileName: string,
-  question: string
-): Promise<string> => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) throw new Error("Gemini API Key ist nicht konfiguriert.");
+    // Entferne JSON-Fences, falls vorhanden
+    let text = res.text.trim();
+    if (text.startsWith("```")) {
+      text = text.replace(/^```(?:json)?\s*/, "").replace(/```$/, "").trim();
+    }
 
-  // 1) Komplettes Dataset aggregieren (Monat×Region)
-  const aggregated = aggregateByMonthAndRegion(parsedData);
-
-  // 2) Prompt so formulieren, dass Gemini selbst rechnet
-  const prompt = `
-Du bist ein professioneller Datenanalyst. Du bekommst ein Array von Objekten mit genau diesen drei Feldern:
-- month: "YYYY-MM"
-- region: Name der Region
-- revenue: Umsatz (Zahl)
-
-**Aufgabe:** Berechne für jede Region den **prozentualen Umsatzunterschied** zwischen Februar 2025 ("2025-02") und März 2025 ("2025-03") und gib **nur** die Region mit dem größten Rückgang aus, inklusive Prozentwert.
-
-Datei: ${fileName}
-
-Daten (Monat×Region):
-\`\`\`json
-${JSON.stringify(aggregated, null, 2)}
-\`\`\`
-
-Frage: ${question}
-`;
-
-  const ai = new GoogleGenAI({ apiKey });
-  const res = await ai.models.generateContent({
-    model: GEMINI_MODEL_TEXT,
-    contents: prompt,
-    config: {
-      responseMimeType: "text/plain",
-      temperature: 0.3,
-      topP: 0.9,
-      topK: 32,
-    },
-  });
-
-  let text = res.text.trim();
-  if (text.startsWith("```")) {
-    text = text.replace(/^```[\w]*\s*/, "").replace(/```$/, "").trim();
+    const parsed = JSON.parse(text) as GeminiAnalysisResponseSchema;
+    // Validieren
+    if (
+      !parsed.summaryText ||
+      !Array.isArray(parsed.keyInsights) ||
+      !Array.isArray(parsed.actionableRecommendations) ||
+      !parsed.visualizationThemeSuggestion
+    ) {
+      throw new Error("Antwort der KI hat nicht das erwartete JSON-Schema.");
+    }
+    return parsed;
+  } catch (err: any) {
+    // Fehlermeldung aufbereiten
+    let msg = "Fehler bei der Kommunikation mit der KI. ";
+    if (err.message) msg += err.message;
+    if (err instanceof SyntaxError) {
+      msg = "Die KI-Antwort war kein gültiges JSON.";
+    }
+    throw new Error(msg);
   }
-  return text;
 };
+
+// Bei Bedarf deine Chat-Funktion analog anpassen, damit sie ebenfalls nur reinen JSON-Output fordert.
