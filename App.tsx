@@ -181,16 +181,23 @@ const App: React.FC = () => {
 
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         {/* Button für History-Ansicht oben rechts */}
-        {currentView !== 'history' && (
-          <div className="flex justify-end mb-4">
-            <button
-              onClick={showHistory}
-              className="px-4 py-2 bg-primary-600 text-white font-semibold rounded-lg shadow-md hover:bg-primary-700 transition duration-150"
-            >
-              Analyse-History
-            </button>
-          </div>
-        )}
+{currentView !== 'history' && (
+  <div className="flex justify-end mb-4 gap-2">
+    <button
+      onClick={showHistory}
+      className="px-4 py-2 bg-primary-600 text-white font-semibold rounded-lg shadow-md hover:bg-primary-700 transition duration-150"
+    >
+      Analyse-History
+    </button>
+    {/* NEU: Test-Button für PDF-Chat */}
+    <button
+      onClick={() => setCurrentView('pdfchat')}
+      className="px-4 py-2 bg-secondary-600 text-white font-semibold rounded-lg shadow-md hover:bg-secondary-700 transition duration-150"
+    >
+      Test: PDF-Chat öffnen (Demo)
+    </button>
+  </div>
+)}
 
         {currentView === 'loading' && <LoadingSpinner message="Analysiere Daten..." />}
 
