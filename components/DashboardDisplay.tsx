@@ -65,7 +65,6 @@ export const DashboardDisplay = React.forwardRef<HTMLDivElement, DashboardDispla
                 ))}
               </ul>
             </Card>
-          </Card>
           
           <Card className="mt-6">
              <h3 className="text-xl font-semibold text-primary-600 mb-3">Visualisierungs-Vorschlag</h3>
