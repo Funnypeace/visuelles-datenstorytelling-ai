@@ -9,10 +9,10 @@ import { APP_TITLE, GEMINI_MODEL_TEXT } from './constants';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
-// NEU: Supabase-Service importieren
-import { insertAnalysis } from './services/analysisService';
+import { insertAnalysis, getAllAnalyses } from './services/analysisService';
+import AnalysisHistory from './components/AnalysisHistory';
 
-type AppView = 'upload' | 'loading' | 'dashboard' | 'error';
+type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('upload');
@@ -20,6 +20,7 @@ const App: React.FC = () => {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<any[]>([]);
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   const resetState = () => {
@@ -43,7 +44,6 @@ const App: React.FC = () => {
         return;
       }
 
-      // KORREKT: Vite-Umgebungsvariable prüfen
       if (!import.meta.env.VITE_GEMINI_API_KEY) {
         setErrorMessage('Gemini API Key ist nicht konfiguriert. Bitte setzen Sie die Umgebungsvariable VITE_GEMINI_API_KEY.');
         setCurrentView('error');
@@ -54,7 +54,7 @@ const App: React.FC = () => {
       setAnalysisResult(analysis);
       setCurrentView('dashboard');
 
-      // NEU: Ergebnis & Daten in Supabase speichern
+      // Speichere Analyse in Supabase
       try {
         await insertAnalysis(
           file.name,
@@ -62,7 +62,6 @@ const App: React.FC = () => {
           analysis.result || (typeof analysis === "string" ? analysis : "")
         );
       } catch (err) {
-        // Optional: Speichere-Fehler anzeigen (App läuft trotzdem weiter)
         console.error("Supabase Insert Error:", err);
       }
     } catch (error) {
@@ -101,6 +100,42 @@ const App: React.FC = () => {
     }
   }, [fileName]);
 
+  // HISTORY: Lädt die History und zeigt die History-Ansicht an
+  const showHistory = async () => {
+    setCurrentView('loading');
+    try {
+      const entries = await getAllAnalyses();
+      setHistoryEntries(entries);
+      setCurrentView('history');
+    } catch (e: any) {
+      setErrorMessage(e.message || "Fehler beim Laden der History");
+      setCurrentView('error');
+    }
+  };
+
+  // HISTORY: Erneut analysieren
+  const handleReanalyze = async (entry: any) => {
+    setCurrentView('loading');
+    setFileName(entry.filename);
+    setParsedData(entry.data);
+    setAnalysisResult(null);
+    try {
+      const analysis = await analyzeDataWithGemini(entry.data, entry.filename, GEMINI_MODEL_TEXT);
+      setAnalysisResult(analysis);
+      setCurrentView('dashboard');
+      // Optional: Erneute Speicherung in Supabase – nur falls du möchtest!
+      // await insertAnalysis(entry.filename, entry.data, analysis.result || (typeof analysis === "string" ? analysis : ""));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Ein Fehler ist aufgetreten");
+      setCurrentView('error');
+    }
+  };
+
+  // HISTORY: Zurück zur App
+  const handleBackToApp = () => {
+    setCurrentView('upload');
+  };
+
   return (
     <div className="min-h-screen bg-secondary-100 text-secondary-800 flex flex-col">
       <header className="bg-primary-600 text-white p-6 shadow-md">
@@ -108,6 +143,18 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
+        {/* Button für History-Ansicht oben rechts */}
+        {currentView !== 'history' && (
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={showHistory}
+              className="px-4 py-2 bg-primary-600 text-white font-semibold rounded-lg shadow-md hover:bg-primary-700 transition duration-150"
+            >
+              Analyse-History
+            </button>
+          </div>
+        )}
+
         {currentView === 'loading' && <LoadingSpinner message="Analysiere Daten..." />}
 
         {currentView === 'upload' && (
@@ -143,6 +190,14 @@ const App: React.FC = () => {
             onExportImage={handleExportToImage}
             onExportPDF={handleExportToPDF}
             onReset={resetState}
+          />
+        )}
+
+        {currentView === 'history' && (
+          <AnalysisHistory
+            analyses={historyEntries}
+            onReanalyze={handleReanalyze}
+            onBack={handleBackToApp}
           />
         )}
       </main>
