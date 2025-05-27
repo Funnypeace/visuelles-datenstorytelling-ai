@@ -19,14 +19,3 @@ export const MAX_SAMPLE_ROWS_FOR_GEMINI = 20;
 
 // Kontrolle der Prompt-Länge (Zeichen)
 export const MAX_PROMPT_CHARS_ESTIMATE = 15000;
-
-// Beispiel-CSV
-export const EXAMPLE_CSV_DATA = `Datum,Region,Produkt,Umsatz,Einheiten
-2025-01-15,Nord,Alpha,1200,30
-2025-01-20,Süd,Beta,800,20
-2025-02-10,Nord,Alpha,1500,35
-2025-02-13,West,Gamma,500,10
-2025-02-25,Süd,Beta,950,25
-2025-03-05,Nord,Alpha,1800,40
-2025-03-15,Ost,Gamma,1100,22
-2025-03-24,West,Beta,2200,50`;
