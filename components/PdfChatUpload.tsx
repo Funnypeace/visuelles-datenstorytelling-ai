@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { extractPdfPages } from '../services/pdfTextExtractor'; // das wie beschrieben anlegen!
+import { extractPdfPages } from '../services/pdfTextExtractor';
 import { savePdfChat } from '../services/pdfChatService';
 
-export const PdfChatUpload: React.FC<{ onChatCreated: (chatId: string) => void }> = ({ onChatCreated }) => {
+interface PdfChatUploadProps {
+  onUploadSuccess: (chatId: string) => void;
+}
+
+const PdfChatUpload: React.FC<PdfChatUploadProps> = ({ onUploadSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -10,11 +14,9 @@ export const PdfChatUpload: React.FC<{ onChatCreated: (chatId: string) => void }
     setLoading(true);
     setError(null);
     try {
-      // PDF Seiten extrahieren
-      const pages = await extractPdfPages(file); // gibt Array mit Seiten-Texten
-      // PDF in Supabase speichern
+      const pages = await extractPdfPages(file);
       const chat = await savePdfChat(file.name, pages);
-      onChatCreated(chat.id); // UUID!
+      onUploadSuccess(chat.id); // <-- Rufe Callback mit der echten Chat-ID
     } catch (e: any) {
       setError(e.message ?? "Fehler beim Verarbeiten oder Speichern der PDF.");
     } finally {
@@ -40,3 +42,5 @@ export const PdfChatUpload: React.FC<{ onChatCreated: (chatId: string) => void }
     </div>
   );
 };
+
+export default PdfChatUpload;
