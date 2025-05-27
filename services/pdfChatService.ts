@@ -46,3 +46,9 @@ export type ChatQA = {
   role: 'user' | 'assistant';
   content: string;
 };
+
+// Dummy-Implementierung: PDF-Chat speichern (für Build/Tests)
+export async function savePdfChat(filename: string, pages: string[]): Promise<{id: string}> {
+  // Hier kommt später echte Supabase-Logik rein. Aktuell nur Demo!
+  return { id: "DEMO_CHAT_ID" };
+}
