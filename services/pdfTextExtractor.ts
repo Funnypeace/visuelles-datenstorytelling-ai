@@ -1,6 +1,4 @@
 // services/pdfTextExtractor.ts
-import * as pdfjsLib from 'pdfjs-dist/build/pdf';
-import 'pdfjs-dist/build/pdf.worker.entry';
 
 /**
  * Extrahiert alle Seiten als Text aus einem PDF.
@@ -8,6 +6,10 @@ import 'pdfjs-dist/build/pdf.worker.entry';
  * @returns Promise<string[]> – Array: Eine Seite = ein String
  */
 export async function extractPdfPages(file: File): Promise<string[]> {
+  // Dynamischer Import von pdfjs-dist, damit es nur im Browser geladen wird!
+  const pdfjsLib = await import('pdfjs-dist/build/pdf');
+  await import('pdfjs-dist/build/pdf.worker.entry');
+
   const data = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data }).promise;
   const numPages = pdf.numPages;
