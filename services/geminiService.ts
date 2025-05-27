@@ -1,43 +1,55 @@
-// services/geminiService.ts
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from '@google/genai';
 import type {
   ParsedData,
   AnalysisResult,
   GeminiAnalysisResponseSchema,
-} from "../types";
+} from '../types';
 import {
   MAX_SAMPLE_ROWS_FOR_GEMINI,
   MAX_PROMPT_CHARS_ESTIMATE,
   GEMINI_MODEL_TEXT,
-} from "../constants";
+} from '../constants';
 
-// --- Analyse-Funktion, wie vorher schon im Repo ---
+/**
+ * Kern-Analyse-Funktion – liefert wieder das volle JSON-Schema inkl. chartSuggestions
+ */
 export const analyzeDataWithGemini = async (
   data: ParsedData[],
   fileName: string,
   modelName?: string
 ): Promise<AnalysisResult> => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) throw new Error("Gemini API Key ist nicht konfiguriert.");
+  if (!apiKey) throw new Error('Gemini API Key ist nicht konfiguriert.');
 
   const ai = new GoogleGenAI({ apiKey });
   const sample = data.slice(0, MAX_SAMPLE_ROWS_FOR_GEMINI);
-  const headers = data.length > 0 ? Object.keys(data[0]) : [];
+  const headers = data.length ? Object.keys(data[0]) : [];
   const prompt = `
-Du bist ein KI-Datenanalyst und Storytelling-Experte. Deine Aufgabe ist es, **ausschließlich** ein gültiges JSON-Dokument auszugeben, **ohne** weitere Erklärungen im Klartext.
-Gib exakt dieses Objekt zurück:
+Du bist ein KI-Datenanalyst und Storytelling-Experte.
+Gib **ausschließlich** dieses JSON zurück, ohne zusätzlichen Klartext:
 
 \`\`\`json
 {
-  "summaryText": "Kurze Zusammenfassung der Analyse",
+  "summaryText": "Kurze Zusammenfassung",
   "keyInsights": ["Insight 1", "Insight 2"],
+  "chartSuggestions": [
+    {
+      "type": "LineChart"|"BarChart"|"PieChart"|"ScatterChart",
+      "title": "Diagrammtitel",
+      "dataKeys": { x?:string; y?:string|string[]; name?:string; value?:string; z?:string },
+      "description": "Kurzbeschreibung"
+    }
+  ],
   "actionableRecommendations": ["Empfehlung 1", "Empfehlung 2"],
-  "visualizationThemeSuggestion": "z.B. 'light' oder 'pastel'"
+  "visualizationThemeSuggestion": {
+    "description": "z. B. Pastellfarben verwenden",
+    "suggestedChartTypeForTheme": "BarChart"
+  }
 }
 \`\`\`
 
 Datei: "${fileName}"
-Spaltenüberschriften: ${headers.join(", ")}
+Spaltenüberschriften: ${headers.join(', ')}
 
 Daten (Beispiel):
 \`\`\`json
@@ -45,9 +57,9 @@ ${JSON.stringify(sample, null, 2)}
 \`\`\`
 
 Analyse-Fokus:
-1. Zentrale Trends (Wachstum, Rückgang, Saisonalität)
-2. Ausreißer und mögliche Ursachen
-3. Korrelationen zwischen Spalten
+1. Trends (Wachstum, Rückgang, Saisonalität)
+2. Ausreißer
+3. Korrelationen
 `;
 
   try {
@@ -55,7 +67,7 @@ Analyse-Fokus:
       model: modelName || GEMINI_MODEL_TEXT,
       contents: prompt,
       config: {
-        responseMimeType: "application/json",
+        responseMimeType: 'application/json',
         temperature: 0.2,
         topP: 0.9,
         topK: 32,
@@ -63,57 +75,58 @@ Analyse-Fokus:
     });
 
     let text = res.text.trim();
-    if (text.startsWith("```")) {
-      text = text.replace(/^```(?:json)?\s*/, "").replace(/```$/, "").trim();
+    if (text.startsWith('```')) {
+      text = text.replace(/^```(?:json)?\s*/, '').replace(/```$/, '').trim();
     }
 
     const parsed = JSON.parse(text) as GeminiAnalysisResponseSchema;
+    // Validierung
     if (
-      !parsed.summaryText ||
+      typeof parsed.summaryText !== 'string' ||
       !Array.isArray(parsed.keyInsights) ||
+      !Array.isArray(parsed.chartSuggestions) ||
       !Array.isArray(parsed.actionableRecommendations) ||
-      !parsed.visualizationThemeSuggestion
+      typeof parsed.visualizationThemeSuggestion !== 'object'
     ) {
-      throw new Error("Antwort der KI hat nicht das erwartete JSON-Schema.");
+      throw new Error('Antwort der KI hat nicht das erwartete JSON-Schema.');
     }
     return parsed;
   } catch (err: any) {
-    let msg = "Fehler bei der Kommunikation mit der KI.";
-    if (err.message) msg += " " + err.message;
+    let msg = 'Fehler bei der Kommunikation mit der KI.';
+    if (err.message) msg += ' ' + err.message;
     if (err instanceof SyntaxError) {
-      msg = "Die KI-Antwort war kein gültiges JSON.";
+      msg = 'Die KI-Antwort war kein gültiges JSON.';
     }
     throw new Error(msg);
   }
 };
 
-// --- Chat-Funktion mit prozentualem Rückgang ---
 /**
- * ParsedData[] hier ist schon das aggregierte Month×Region-Array,
- * wenn du fileParserService.ts wie vorgeschlagen angepasst hast.
+ * Chat-Funktion: berechnet prozentualen Rückgang Feb→März auf dem aggregierten Pivot
  */
 export const askGeminiAboutData = async (
-  parsedData: { month: string; region: string; revenue: number }[],
+  parsedData: ParsedData[],
   fileName: string,
   question: string
 ): Promise<string> => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) throw new Error("Gemini API Key ist nicht konfiguriert.");
+  if (!apiKey) throw new Error('Gemini API Key ist nicht konfiguriert.');
 
+  // parsedData ist durch parseDataFile schon Monat×Region pivotiert
   const aggregated = parsedData;
 
   const prompt = `
-Du bist ein professioneller Datenanalyst. Du bekommst ein Array von Objekten mit Feldern:
+Du bist ein professioneller Datenanalyst. Du bekommst ein Array mit Objekten:
 - month: "YYYY-MM"
-- region: Region (String)
-- revenue: Umsatz (Zahl)
+- region: String
+- revenue: Zahl
 
-Aufgabe: Berechne für jede Region den prozentualen Umsatzunterschied zwischen Februar 2025 ("2025-02") und März 2025 ("2025-03")
-und gib **nur** die Region mit dem stärksten Rückgang aus – inkl. Prozentzahl.
+**Aufgabe:** Berechne für jede Region den Prozent-Unterschied zwischen Februar 2025 ("2025-02") und März 2025 ("2025-03").
+Gib **nur** die Region mit dem stärksten Rückgang aus – inkl. Prozentzahl.
 
 Datei: "${fileName}"
 
-Daten (Monat×Region):
+Daten:
 \`\`\`json
 ${JSON.stringify(aggregated, null, 2)}
 \`\`\`
@@ -126,7 +139,7 @@ Frage: ${question}
     model: GEMINI_MODEL_TEXT,
     contents: prompt,
     config: {
-      responseMimeType: "text/plain",
+      responseMimeType: 'text/plain',
       temperature: 0.3,
       topP: 0.9,
       topK: 32,
@@ -134,8 +147,8 @@ Frage: ${question}
   });
 
   let text = res.text.trim();
-  if (text.startsWith("```")) {
-    text = text.replace(/^```[\w]*\s*/, "").replace(/```$/, "").trim();
+  if (text.startsWith('```')) {
+    text = text.replace(/^```[\w]*\s*/, '').replace(/```$/, '').trim();
   }
   return text;
 };
