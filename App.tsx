@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { DashboardDisplay } from './components/DashboardDisplay';
@@ -9,6 +8,9 @@ import type { ParsedData, AnalysisResult } from './types';
 import { APP_TITLE, GEMINI_MODEL_TEXT } from './constants';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+
+// NEU: Supabase-Service importieren
+import { insertAnalysis } from './services/analysisService';
 
 type AppView = 'upload' | 'loading' | 'dashboard' | 'error';
 
@@ -40,17 +42,29 @@ const App: React.FC = () => {
         setCurrentView('error');
         return;
       }
-      
-      // Check API_KEY presence
-      if (!process.env.API_KEY) {
-          setErrorMessage('Gemini API Key ist nicht konfiguriert. Bitte setzen Sie die Umgebungsvariable API_KEY.');
-          setCurrentView('error');
-          return;
+
+      // KORREKT: Vite-Umgebungsvariable prüfen
+      if (!import.meta.env.VITE_GEMINI_API_KEY) {
+        setErrorMessage('Gemini API Key ist nicht konfiguriert. Bitte setzen Sie die Umgebungsvariable VITE_GEMINI_API_KEY.');
+        setCurrentView('error');
+        return;
       }
 
       const analysis = await analyzeDataWithGemini(data, file.name, GEMINI_MODEL_TEXT);
       setAnalysisResult(analysis);
       setCurrentView('dashboard');
+
+      // NEU: Ergebnis & Daten in Supabase speichern
+      try {
+        await insertAnalysis(
+          file.name,
+          data,
+          analysis.result || (typeof analysis === "string" ? analysis : "")
+        );
+      } catch (err) {
+        // Optional: Speichere-Fehler anzeigen (App läuft trotzdem weiter)
+        console.error("Supabase Insert Error:", err);
+      }
     } catch (error) {
       console.error("Fehler bei der Datenverarbeitung oder Analyse:", error);
       setErrorMessage(error instanceof Error ? error.message : "Ein unbekannter Fehler ist aufgetreten.");
@@ -95,7 +109,7 @@ const App: React.FC = () => {
 
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         {currentView === 'loading' && <LoadingSpinner message="Analysiere Daten..." />}
-        
+
         {currentView === 'upload' && (
           <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-2xl text-center">
             <h2 className="text-2xl font-semibold text-primary-700 mb-6">Daten hochladen und Story entdecken</h2>
