@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { extractPdfPages } from '../services/pdfTextExtractor';
+// import { extractPdfPages } from '../services/pdfTextExtractor';   // <--- LÖSCHEN!
 import { savePdfChat } from '../services/pdfChatService';
 
 interface PdfChatUploadProps {
@@ -14,9 +14,11 @@ const PdfChatUpload: React.FC<PdfChatUploadProps> = ({ onUploadSuccess }) => {
     setLoading(true);
     setError(null);
     try {
-      const pages = await extractPdfPages(file);
+      // const pages = await extractPdfPages(file); // <--- ENTFERNEN
+      // Simuliere leeres Seiten-Array (kannst du später anpassen)
+      const pages: string[] = [];
       const chat = await savePdfChat(file.name, pages);
-      onUploadSuccess(chat.id); // <-- Rufe Callback mit der echten Chat-ID
+      onUploadSuccess(chat.id);
     } catch (e: any) {
       setError(e.message ?? "Fehler beim Verarbeiten oder Speichern der PDF.");
     } finally {
