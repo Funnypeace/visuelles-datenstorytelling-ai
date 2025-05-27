@@ -3,7 +3,7 @@ import { FileUpload } from './components/FileUpload';
 import { DashboardDisplay } from './components/DashboardDisplay';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { parseDataFile } from './services/fileParserService';
-import { analyzeDataWithGemini } from './services/geminiService';
+import { analyzeDataWithGemini, askGeminiAboutData } from './services/geminiService';
 import type { ParsedData, AnalysisResult } from './types';
 import { APP_TITLE, GEMINI_MODEL_TEXT } from './constants';
 import { jsPDF } from 'jspdf';
@@ -11,8 +11,9 @@ import html2canvas from 'html2canvas';
 
 import { insertAnalysis, getAllAnalyses } from './services/analysisService';
 import AnalysisHistory from './components/AnalysisHistory';
+import DataChat from './components/DataChat';
 
-type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history';
+type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history' | 'chat';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('upload');
@@ -123,8 +124,6 @@ const App: React.FC = () => {
       const analysis = await analyzeDataWithGemini(entry.data, entry.filename, GEMINI_MODEL_TEXT);
       setAnalysisResult(analysis);
       setCurrentView('dashboard');
-      // Optional: Erneute Speicherung in Supabase – nur falls du möchtest!
-      // await insertAnalysis(entry.filename, entry.data, analysis.result || (typeof analysis === "string" ? analysis : ""));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Ein Fehler ist aufgetreten");
       setCurrentView('error');
@@ -134,6 +133,28 @@ const App: React.FC = () => {
   // HISTORY: Zurück zur App
   const handleBackToApp = () => {
     setCurrentView('upload');
+  };
+
+  // CHAT: Öffnet Chat-Ansicht
+  const handleOpenChat = () => {
+    setCurrentView('chat');
+  };
+
+  // CHAT: Schließen und zurück zum Dashboard
+  const handleCloseChat = () => {
+    setCurrentView('dashboard');
+  };
+
+  // CHAT: Fragt die KI zum aktuellen Datensatz
+  const handleAskQuestion = async (question: string): Promise<string> => {
+    if (!parsedData || !fileName) {
+      return "Fehler: Es ist kein Datensatz geladen.";
+    }
+    try {
+      return await askGeminiAboutData(parsedData, fileName, question);
+    } catch (e: any) {
+      return e?.message || "Fehler bei der KI-Anfrage.";
+    }
   };
 
   return (
@@ -182,15 +203,39 @@ const App: React.FC = () => {
         )}
 
         {currentView === 'dashboard' && analysisResult && parsedData && (
-          <DashboardDisplay
-            ref={dashboardRef}
-            analysis={analysisResult}
-            rawData={parsedData}
-            fileName={fileName}
-            onExportImage={handleExportToImage}
-            onExportPDF={handleExportToPDF}
-            onReset={resetState}
-          />
+          <>
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={handleOpenChat}
+                className="px-4 py-2 bg-primary-600 text-white font-semibold rounded-lg shadow-md hover:bg-primary-700 transition duration-150"
+              >
+                KI-Chat zum Dokument
+              </button>
+            </div>
+            <DashboardDisplay
+              ref={dashboardRef}
+              analysis={analysisResult}
+              rawData={parsedData}
+              fileName={fileName}
+              onExportImage={handleExportToImage}
+              onExportPDF={handleExportToPDF}
+              onReset={resetState}
+            />
+          </>
+        )}
+
+        {currentView === 'chat' && (
+          <div>
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={handleCloseChat}
+                className="px-4 py-2 bg-secondary-500 text-white font-semibold rounded-lg shadow-md hover:bg-secondary-700 transition duration-150"
+              >
+                Zurück zum Dashboard
+              </button>
+            </div>
+            <DataChat onAsk={handleAskQuestion} />
+          </div>
         )}
 
         {currentView === 'history' && (
