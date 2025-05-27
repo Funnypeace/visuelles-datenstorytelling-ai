@@ -13,6 +13,7 @@ import { insertAnalysis, getAllAnalyses } from './services/analysisService';
 import AnalysisHistory from './components/AnalysisHistory';
 import DataChat from './components/DataChat';
 import { PdfChat } from './components/PdfChat';
+import PdfChatUpload from './components/PdfChatUpload'; // <--- NEU
 
 type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history' | 'chat' | 'pdfchat';
 
@@ -189,12 +190,6 @@ const App: React.FC = () => {
             >
               Analyse-History
             </button>
-            <button
-              onClick={() => handleOpenPdfChat('DEMO_CHAT_ID')}
-              className="px-4 py-2 bg-secondary-600 text-white font-semibold rounded-lg shadow-md hover:bg-secondary-700 transition duration-150"
-            >
-              Test: PDF-Chat öffnen (Demo)
-            </button>
           </div>
         )}
 
@@ -208,6 +203,10 @@ const App: React.FC = () => {
               automatisch ein interaktives Dashboard mit Visualisierungen, Trends und Empfehlungen.
             </p>
             <FileUpload onFileUpload={handleFileUpload} />
+            {/* PDF-Upload Modul */}
+            <div className="mt-8">
+              <PdfChatUpload onUploadSuccess={handleOpenPdfChat} />
+            </div>
           </div>
         )}
 
@@ -260,7 +259,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {currentView === 'pdfchat' && (
+        {currentView === 'pdfchat' && currentPdfChatId && (
           <div>
             <div className="flex justify-end mb-4">
               <button
@@ -271,7 +270,7 @@ const App: React.FC = () => {
               </button>
             </div>
             <PdfChat
-              chatId={currentPdfChatId ?? 'DEMO_CHAT_ID'}
+              chatId={currentPdfChatId}
               apiKey={import.meta.env.VITE_GEMINI_API_KEY!}
             />
           </div>
