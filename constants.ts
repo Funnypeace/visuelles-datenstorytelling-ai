@@ -4,7 +4,7 @@ export const APP_TITLE = "Visuelles Daten-Storytelling AI";
 // Das Modell, das wir für alle Text-Anfragen an Gemini nutzen
 export const GEMINI_MODEL_TEXT = "gemini-2.5-flash-preview-04-17";
 
-// Chart-Farben (Optional erweiterbar)
+// Farben für deine Charts
 export const CHART_COLORS = [
   "#3b82f6", // blue-500
   "#14b8a6", // teal-500
@@ -14,8 +14,8 @@ export const CHART_COLORS = [
   "#8b5cf6", // violet-500
 ];
 
-// Maximal so viele Datenzeilen schickt man an Gemini
+// Maximal so viele Zeilen schicken wir an Gemini
 export const MAX_SAMPLE_ROWS_FOR_GEMINI = 20;
 
-// Kontrolle der Prompt-Länge (Zeichen)
+// Schätzung für maximale Prompt-Länge (in Zeichen)
 export const MAX_PROMPT_CHARS_ESTIMATE = 15000;
