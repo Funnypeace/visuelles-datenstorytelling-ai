@@ -12,9 +12,9 @@ import html2canvas from 'html2canvas';
 import { insertAnalysis, getAllAnalyses } from './services/analysisService';
 import AnalysisHistory from './components/AnalysisHistory';
 import DataChat from './components/DataChat';
-import { PdfChat } from './components/PdfChat'; // <--- NEU!
+import { PdfChat } from './components/PdfChat';
 
-type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history' | 'chat' | 'pdfchat'; // <--- NEU
+type AppView = 'upload' | 'loading' | 'dashboard' | 'error' | 'history' | 'chat' | 'pdfchat';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('upload');
@@ -167,7 +167,7 @@ const App: React.FC = () => {
     setCurrentView('pdfchat');
   };
 
-  // PDFCHAT: Schließen (zurück zum Upload, du kannst es anpassen)
+  // PDFCHAT: Schließen (zurück zum Upload)
   const handleClosePdfChat = () => {
     setCurrentPdfChatId(null);
     setCurrentView('upload');
@@ -180,24 +180,23 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
-        {/* Button für History-Ansicht oben rechts */}
-{currentView !== 'history' && (
-  <div className="flex justify-end mb-4 gap-2">
-    <button
-      onClick={showHistory}
-      className="px-4 py-2 bg-primary-600 text-white font-semibold rounded-lg shadow-md hover:bg-primary-700 transition duration-150"
-    >
-      Analyse-History
-    </button>
-    {/* NEU: Test-Button für PDF-Chat */}
-    <button
-      onClick={() => setCurrentView('pdfchat')}
-      className="px-4 py-2 bg-secondary-600 text-white font-semibold rounded-lg shadow-md hover:bg-secondary-700 transition duration-150"
-    >
-      Test: PDF-Chat öffnen (Demo)
-    </button>
-  </div>
-)}
+        {/* Buttons oben rechts */}
+        {currentView !== 'history' && (
+          <div className="flex justify-end mb-4 gap-2">
+            <button
+              onClick={showHistory}
+              className="px-4 py-2 bg-primary-600 text-white font-semibold rounded-lg shadow-md hover:bg-primary-700 transition duration-150"
+            >
+              Analyse-History
+            </button>
+            <button
+              onClick={() => handleOpenPdfChat('DEMO_CHAT_ID')}
+              className="px-4 py-2 bg-secondary-600 text-white font-semibold rounded-lg shadow-md hover:bg-secondary-700 transition duration-150"
+            >
+              Test: PDF-Chat öffnen (Demo)
+            </button>
+          </div>
+        )}
 
         {currentView === 'loading' && <LoadingSpinner message="Analysiere Daten..." />}
 
@@ -209,16 +208,6 @@ const App: React.FC = () => {
               automatisch ein interaktives Dashboard mit Visualisierungen, Trends und Empfehlungen.
             </p>
             <FileUpload onFileUpload={handleFileUpload} />
-
-            {/* TEST-BUTTON FÜR PDF-CHAT */}
-            <div className="mt-6">
-              <button
-                onClick={() => handleOpenPdfChat('DEMO_CHAT_ID')}
-                className="px-4 py-2 bg-secondary-600 text-white rounded-md"
-              >
-                Test: PDF-Chat öffnen (Demo)
-              </button>
-            </div>
           </div>
         )}
 
@@ -271,7 +260,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {currentView === 'pdfchat' && currentPdfChatId && (
+        {currentView === 'pdfchat' && (
           <div>
             <div className="flex justify-end mb-4">
               <button
@@ -282,7 +271,7 @@ const App: React.FC = () => {
               </button>
             </div>
             <PdfChat
-              chatId={currentPdfChatId}
+              chatId={currentPdfChatId ?? 'DEMO_CHAT_ID'}
               apiKey={import.meta.env.VITE_GEMINI_API_KEY!}
             />
           </div>
