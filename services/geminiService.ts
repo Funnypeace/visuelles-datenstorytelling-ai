@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import type { ParsedData, AnalysisResult, GeminiAnalysisResponseSchema } from '../types';
 import { MAX_SAMPLE_ROWS_FOR_GEMINI, MAX_PROMPT_CHARS_ESTIMATE } from '../constants';
@@ -128,6 +127,61 @@ export const analyzeDataWithGemini = async (
     } else if (error instanceof SyntaxError) {
         userMessage = "Fehler beim Verarbeiten der KI-Antwort (ungültiges JSON). Die KI hat möglicherweise nicht im erwarteten Format geantwortet.";
     }
+    throw new Error(userMessage);
+  }
+};
+
+// =========== NEU: KI-Chat-Funktion ===========
+
+export const askGeminiAboutData = async (
+  parsedData: ParsedData,
+  fileName: string,
+  question: string
+): Promise<string> => {
+  if (!process.env.API_KEY) {
+    throw new Error("Gemini API Key ist nicht konfiguriert.");
+  }
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  // Verwende ein Sample von maximal 10 Zeilen
+  const dataSample = Array.isArray(parsedData) ? parsedData.slice(0, 10) : parsedData;
+  const headers = Array.isArray(parsedData) && parsedData.length > 0 ? Object.keys(parsedData[0]) : [];
+
+  // Prompt für Daten-gebundenen Chat
+  const prompt = `
+Du bist ein professioneller Datenanalyst. Antworte **ausschließlich** auf Basis der folgenden Tabellendaten (${fileName}):
+Spalten: ${headers.join(', ')}
+Datenauszug (maximal 10 Zeilen):
+${JSON.stringify(dataSample, null, 2)}
+
+Frage des Nutzers:
+${question}
+
+Antworte prägnant und beziehe dich ausschließlich auf diese Tabelle. Wenn du die Antwort nicht sicher weißt, sage ehrlich, dass die Daten dafür nicht ausreichen.
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-pro",
+      contents: prompt,
+      config: {
+        responseMimeType: "text/plain",
+        temperature: 0.3,
+        topP: 0.9,
+        topK: 32,
+      },
+    });
+
+    // Text extrahieren (kein JSON, sondern Klartext)
+    let text = response.text.trim();
+    // Entferne evtl. Markdown-Fences (```)
+    if (text.startsWith("```")) {
+      text = text.replace(/^```[\w]*\s*/, "").replace(/```$/, "").trim();
+    }
+    return text;
+  } catch (error: any) {
+    let userMessage = "Fehler bei der KI-Antwort. ";
+    if (error.message) userMessage += error.message;
     throw new Error(userMessage);
   }
 };
