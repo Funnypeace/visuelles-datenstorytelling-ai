@@ -1,94 +1,140 @@
-// services/fileParserService.ts
-import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
-import type { ParsedData, DataEntry } from '../types';
+// services/geminiService.ts
+import { GoogleGenAI } from '@google/genai';
+import type {
+  ParsedData,
+  AnalysisResult,
+  GeminiAnalysisResponseSchema,
+} from '../types';
+import {
+  MAX_SAMPLE_ROWS_FOR_GEMINI,
+  MAX_PROMPT_CHARS_ESTIMATE,
+  GEMINI_MODEL_TEXT,
+} from '../constants';
 
-/** Hilfsfunktion: Monat×Region-Pivot */
-function aggregateByMonthAndRegion(
-  rows: DataEntry[]
-): { month: string; region: string; revenue: number }[] {
-  const map: Record<string, { month: string; region: string; revenue: number }> = {};
+/** Hauptanalyse: JSON-Schema mit chartSuggestions */
+export const analyzeDataWithGemini = async (
+  data: ParsedData[],
+  fileName: string,
+  modelName?: string
+): Promise<AnalysisResult> => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) throw new Error('Gemini API Key ist nicht konfiguriert.');
 
-  rows.forEach((row) => {
-    // Datum auslesen: Excel liefert Date-Objekt dank cellDates:true und raw:false
-    const raw = (row as any).Datum;
-    let dateString: string;
-    if (raw instanceof Date) {
-      dateString = raw.toISOString().slice(0, 10);
-    } else {
-      dateString = String(raw ?? '').slice(0, 10);
+  const ai = new GoogleGenAI({ apiKey });
+  const sample = data.slice(0, MAX_SAMPLE_ROWS_FOR_GEMINI);
+  const headers = sample.length ? Object.keys(sample[0]) : [];
+  const prompt = `
+Du bist ein KI-Datenanalyst und Storytelling-Experte. Gib **ausschließlich** dieses JSON zurück:
+
+\`\`\`json
+{
+  "summaryText": "Kurze Zusammenfassung",
+  "keyInsights": ["Insight 1", "Insight 2"],
+  "chartSuggestions": [
+    {
+      "type": "LineChart"|"BarChart"|"PieChart"|"ScatterChart",
+      "title": "Diagrammtitel",
+      "dataKeys": { x?:string; y?:string|string[]; name?:string; value?:string; z?:string },
+      "description": "Kurzbeschreibung"
     }
-
-    const month = dateString.slice(0, 7);       // "YYYY-MM"
-    const region = String((row as any).Region ?? row.region ?? '');
-    const revenue = Number((row as any).Umsatz ?? row.revenue ?? 0);
-
-    const key = `${month}|${region}`;
-    if (!map[key]) {
-      map[key] = { month, region, revenue: 0 };
-    }
-    map[key].revenue += revenue;
-  });
-
-  return Object.values(map);
+  ],
+  "actionableRecommendations": ["Empfehlung 1", "Empfehlung 2"],
+  "visualizationThemeSuggestion": {
+    "description": "z. B. Pastellfarben verwenden",
+    "suggestedChartTypeForTheme": "BarChart"
+  }
 }
+\`\`\`
 
-export const parseDataFile = (file: File): Promise<ParsedData[]> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+Datei: "${fileName}"
+Spalten: ${headers.join(', ')}
 
-    reader.onload = (e: ProgressEvent<FileReader>) => {
-      const result = e.target?.result;
-      if (!result) return reject(new Error('Fehler beim Lesen der Datei.'));
+Daten (Beispiel):
+\`\`\`json
+${JSON.stringify(sample, null, 2)}
+\`\`\`
+`;
 
-      try {
-        let rawRows: DataEntry[] = [];
+  try {
+    const res = await ai.models.generateContent({
+      model: modelName || GEMINI_MODEL_TEXT,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 32,
+      },
+    });
 
-        // --- CSV ---
-        if (file.name.endsWith('.csv') || file.type === 'text/csv') {
-          const text = result as string;
-          const { data } = Papa.parse<string[]>(text, { skipEmptyLines: true });
-          const [headers, ...rows] = data;
-          rawRows = rows.map((r) => {
-            const obj: any = {};
-            headers.forEach((h, i) => (obj[h] = r[i]));
-            return obj as DataEntry;
-          });
-
-        // --- XLSX ---
-        } else {
-          const arrayBuffer = result as ArrayBuffer;
-          // cellDates:true → Datum als JS Date, raw:false → Formatiert als String/Date
-          const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
-          const sheet = wb.Sheets[wb.SheetNames[0]];
-          rawRows = XLSX.utils.sheet_to_json<DataEntry>(sheet, {
-            defval: null,
-            raw: false,
-          }) as DataEntry[];
-        }
-
-        // Pivotieren: Monat×Region
-        const aggregated = aggregateByMonthAndRegion(rawRows);
-        resolve(aggregated);
-
-      } catch (err: any) {
-        reject(new Error('Fehler beim Verarbeiten der Datei: ' + err.message));
-      }
-    };
-
-    reader.onerror = () => reject(new Error('Datei-Lese-Fehler.'));
-
-    // Lesevorgang starten
-    if (file.name.endsWith('.csv') || file.type === 'text/csv') {
-      reader.readAsText(file);
-    } else if (
-      file.name.endsWith('.xlsx') ||
-      file.type ===
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ) {
-      reader.readAsArrayBuffer(file);
-    } else {
-      reject(new Error('Nicht unterstützter Dateityp.'));
+    let text = res.text.trim();
+    if (text.startsWith('```')) {
+      text = text.replace(/^```(?:json)?\s*/, '').replace(/```$/, '').trim();
     }
+
+    const parsed = JSON.parse(text) as GeminiAnalysisResponseSchema;
+    if (
+      typeof parsed.summaryText !== 'string' ||
+      !Array.isArray(parsed.keyInsights) ||
+      !Array.isArray(parsed.chartSuggestions) ||
+      !Array.isArray(parsed.actionableRecommendations) ||
+      typeof parsed.visualizationThemeSuggestion !== 'object'
+    ) {
+      throw new Error('Das JSON-Schema der KI-Antwort stimmt nicht.');
+    }
+    return parsed;
+  } catch (err: any) {
+    let msg = 'Fehler bei der Kommunikation mit der KI.';
+    if (err.message) msg += ` ${err.message}`;
+    if (err instanceof SyntaxError) msg = 'Ungültiges JSON von der KI.';
+    throw new Error(msg);
+  }
+};
+
+/** Chat-Funktion: prozentualer Rückgang Feb→März auf Pivot-Daten */
+export const askGeminiAboutData = async (
+  parsedData: ParsedData[],
+  fileName: string,
+  question: string
+): Promise<string> => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) throw new Error('Gemini API Key ist nicht konfiguriert.');
+
+  const aggregated = parsedData;
+
+  const prompt = `
+Du bist ein professioneller Datenanalyst. Du erhältst ein Array mit Objekten:
+- month: "YYYY-MM"
+- region: String
+- revenue: Zahl
+
+**Aufgabe:** Berechne für jede Region den Prozent-Unterschied zwischen Februar 2025 ("2025-02") und März 2025 ("2025-03") und gib **nur** die Region mit dem stärksten Rückgang aus – inkl. Prozentzahl.
+
+Datei: "${fileName}"
+
+Daten:
+\`\`\`json
+${JSON.stringify(aggregated, null, 2)}
+\`\`\`
+
+Frage: ${question}
+`;
+
+  const ai = new GoogleGenAI({ apiKey });
+  const res = await ai.models.generateContent({
+    model: GEMINI_MODEL_TEXT,
+    contents: prompt,
+    config: {
+      responseMimeType: 'text/plain',
+      temperature: 0.3,
+      topP: 0.9,
+      topK: 32,
+    },
   });
+
+  let text = res.text.trim();
+  if (text.startsWith('```')) {
+    text = text.replace(/^```[\w]*\s*/, '').replace(/```$/, '').trim();
+  }
+  return text;
 };
