@@ -15,10 +15,10 @@ function aggregateByMonthAndRegion(
     let dateString: string;
 
     if (raw instanceof Date) {
-      // echte JS-Date-Objekte kommen hierher
+      // echte JS-Date-Objekte
       dateString = raw.toISOString().slice(0, 10);
     } else {
-      // Strings oder Zahlen werden zu String
+      // Strings oder Zahlen
       dateString = String(raw ?? '').slice(0, 10);
     }
 
@@ -61,18 +61,19 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> => {
         // --- XLSX-Fall ---
         } else {
           const arrayBuffer = result as ArrayBuffer;
-          // cellDates:true liest Datum als JS-Date, raw:false nutzt Zellformatierung
           const wb = XLSX.read(arrayBuffer, {
             type: 'array',
             cellDates: true,
           });
           const sheet = wb.Sheets[wb.SheetNames[0]];
-          // Auslesen als Objekte anhand der ersten Zeile als Header
           rawRows = XLSX.utils.sheet_to_json<DataEntry>(sheet, {
             defval: null,
             raw: false,
-          });
+          }) as DataEntry[];
         }
+
+        // Debug: erste 5 Zeilen inspizieren
+        console.log('🔍 rawRows sample:', rawRows.slice(0, 5));
 
         // Nun pivotieren auf Monat × Region
         const aggregated = aggregateByMonthAndRegion(rawRows);
