@@ -150,10 +150,23 @@ const App: React.FC = () => {
     if (!parsedData || !fileName) {
       return "Fehler: Kein Datensatz geladen.";
     }
-    // Debug: show parsedData in console
+    // Debug: Roh-Daten anzeigen
     console.log('💬 CHAT parsedData:', parsedData);
+
+    // Fehlende Region×Monat-Kombinationen auffüllen
+    const regions = Array.from(new Set(parsedData.map(d => d.region)));
+    const compareMonths = ['2025-02', '2025-03'];
+    const filledData: ParsedData[] = regions.flatMap(region =>
+      compareMonths.map(month => {
+        const existing = parsedData.find(d => d.region === region && d.month === month);
+        return existing ?? { month, region, revenue: 0 };
+      })
+    );
+    console.log('💬 filledData for comparison:', filledData);
+
+    // Chat-Anfrage an Gemini
     try {
-      return await askGeminiAboutData(parsedData, fileName, question);
+      return await askGeminiAboutData(filledData, fileName, question);
     } catch (e: any) {
       return e.message || "Fehler bei der KI-Anfrage.";
     }
@@ -253,21 +266,21 @@ const App: React.FC = () => {
               <button
                 onClick={handleClosePdfChat}
                 className="px-4 py-2 bg-secondary-500 text-white rounded-lg shadow-md hover:bg-secondary-700"
-              >
-                Zurück
-              </button>
-            </div>
-            <PdfChat chatId={currentPdfChatId} apiKey={import.meta.env.VITE_GEMINI_API_KEY!} />
+            >
+              Zurück
+            </button>
           </div>
-        )}
-        {currentView === 'history' && (
-          <AnalysisHistory analyses={historyEntries} onReanalyze={handleReanalyze} onBack={handleBackToApp} />
-        )}
-      </main>
-      <footer className="text-center p-4 text-secondary-500 text-sm">
-        Powered by React, Tailwind CSS & Google Gemini API
-      </footer>
-    </div>
+          <PdfChat chatId={currentPdfChatId} apiKey={import.meta.env.VITE_GEMINI_API_KEY!} />
+        </div>
+      )}
+      {currentView === 'history' && (
+        <AnalysisHistory analyses={historyEntries} onReanalyze={handleReanalyze} onBack={handleBackToApp} />
+      )}
+    </main>
+    <footer className="text-center p-4 text-secondary-500 text-sm">
+      Powered by React, Tailwind CSS & Google Gemini API
+    </footer>
+  </div>
   );
 };
 
