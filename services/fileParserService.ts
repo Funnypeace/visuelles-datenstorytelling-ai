@@ -19,7 +19,7 @@ const germanMonthNames = [
   'Dezember',
 ];
 
-/** Pivotiert auf Monat × Region und summiert Umsatz */
+/** Pivotiert auf Monat × Region und summiert den Umsatz */
 function aggregateByMonthAndRegion(
   rows: DataEntry[]
 ): { month: string; region: string; revenue: number }[] {
@@ -28,11 +28,10 @@ function aggregateByMonthAndRegion(
   rows.forEach((row) => {
     const monName = String((row as any).Monat ?? '').trim();
     const idx = germanMonthNames.indexOf(monName);
-    if (idx < 0) return; // unbekannter Monat überspringen
+    if (idx < 0) return; // Unbekannte Monatsnamen überspringen
 
-    const year = '2025';
-    const month = String(idx + 1).padStart(2, '0');     // "01"–"12"
-    const monthKey = `${year}-${month}`;                // "2025-02"
+    // Jahr statisch 2025 – passe hier an, falls dein Sheet ein Jahr-Feld enthält
+    const monthKey = `2025-${String(idx + 1).padStart(2, '0')}`; // "2025-02"
 
     const region = String((row as any).Region ?? '').trim();
     const revenue = Number((row as any).Umsatz ?? 0);
@@ -47,15 +46,12 @@ function aggregateByMonthAndRegion(
   return Object.values(map);
 }
 
-export const parseDataFile = (file: File): Promise<ParsedData[]> => {
-  return new Promise((resolve, reject) => {
+export const parseDataFile = (file: File): Promise<ParsedData[]> =>
+  new Promise((resolve, reject) => {
     const reader = new FileReader();
-
     reader.onload = (e: ProgressEvent<FileReader>) => {
       const result = e.target?.result;
-      if (!result) {
-        return reject(new Error('Fehler beim Lesen der Datei.'));
-      }
+      if (!result) return reject(new Error('Fehler beim Lesen der Datei.'));
 
       try {
         let rawRows: DataEntry[] = [];
@@ -67,18 +63,13 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> => {
           const [headers, ...rows] = data;
           rawRows = rows.map((r) => {
             const obj: any = {};
-            headers.forEach((h, i) => {
-              obj[h] = r[i];
-            });
+            headers.forEach((h, i) => (obj[h] = r[i]));
             return obj as DataEntry;
           });
         } else {
           // XLSX
-          const arrayBuffer = result as ArrayBuffer;
-          const wb = XLSX.read(arrayBuffer, {
-            type: 'array',
-            cellDates: true,
-          });
+          const buffer = result as ArrayBuffer;
+          const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
           const sheet = wb.Sheets[wb.SheetNames[0]];
           rawRows = XLSX.utils.sheet_to_json<DataEntry>(sheet, {
             defval: null,
@@ -90,16 +81,13 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> => {
         const aggregated = aggregateByMonthAndRegion(rawRows);
         resolve(aggregated);
       } catch (err: any) {
-        reject(new Error('Fehler beim Verarbeiten der Datei: ' + err.message));
+        reject(new Error('Verarbeitungsfehler: ' + err.message));
       }
     };
-
     reader.onerror = () => reject(new Error('Datei-Lese-Fehler.'));
-
     if (file.name.endsWith('.csv') || file.type === 'text/csv') {
       reader.readAsText(file);
     } else {
       reader.readAsArrayBuffer(file);
     }
   });
-};
