@@ -7,40 +7,46 @@ import type {
 } from '../types';
 import {
   MAX_SAMPLE_ROWS_FOR_GEMINI,
-  MAX_PROMPT_CHARS_ESTIMATE,
   GEMINI_MODEL_TEXT,
 } from '../constants';
 
-/** Hauptanalyse: JSON-Schema mit chartSuggestions */
+/**
+ * Führt die Hauptanalyse durch und liefert
+ * ein konsistentes JSON-Schema inkl. chartSuggestions
+ */
 export const analyzeDataWithGemini = async (
   data: ParsedData[],
   fileName: string,
   modelName?: string
 ): Promise<AnalysisResult> => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Gemini API Key ist nicht konfiguriert.');
+  if (!apiKey) {
+    throw new Error('Gemini API Key ist nicht konfiguriert.');
+  }
 
   const ai = new GoogleGenAI({ apiKey });
   const sample = data.slice(0, MAX_SAMPLE_ROWS_FOR_GEMINI);
   const headers = sample.length ? Object.keys(sample[0]) : [];
+
   const prompt = `
-Du bist ein KI-Datenanalyst und Storytelling-Experte. Gib **ausschließlich** dieses JSON zurück:
+Du bist ein KI-Datenanalyst und Storytelling-Experte.
+Gib **ausschließlich** folgendes JSON zurück (keine Klartext-Antwort):
 
 \`\`\`json
 {
-  "summaryText": "Kurze Zusammenfassung",
+  "summaryText": "Kurze Zusammenfassung der Analyse",
   "keyInsights": ["Insight 1", "Insight 2"],
   "chartSuggestions": [
     {
-      "type": "LineChart"|"BarChart"|"PieChart"|"ScatterChart",
+      "type": "LineChart" | "BarChart" | "PieChart" | "ScatterChart",
       "title": "Diagrammtitel",
-      "dataKeys": { x?:string; y?:string|string[]; name?:string; value?:string; z?:string },
+      "dataKeys": { x?: string; y?: string | string[]; name?: string; value?: string; z?: string },
       "description": "Kurzbeschreibung"
     }
   ],
   "actionableRecommendations": ["Empfehlung 1", "Empfehlung 2"],
   "visualizationThemeSuggestion": {
-    "description": "z. B. Pastellfarben verwenden",
+    "description": "z. B. Pastelltöne verwenden",
     "suggestedChartTypeForTheme": "BarChart"
   }
 }
@@ -49,72 +55,72 @@ Du bist ein KI-Datenanalyst und Storytelling-Experte. Gib **ausschließlich** di
 Datei: "${fileName}"
 Spalten: ${headers.join(', ')}
 
-Daten (Beispiel):
+Daten (Beispiel, ggf. gekürzt):
 \`\`\`json
 ${JSON.stringify(sample, null, 2)}
 \`\`\`
 `;
 
-  try {
-    const res = await ai.models.generateContent({
-      model: modelName || GEMINI_MODEL_TEXT,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-        topP: 0.9,
-        topK: 32,
-      },
-    });
+  const res = await ai.models.generateContent({
+    model: modelName || GEMINI_MODEL_TEXT,
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      temperature: 0.2,
+      topP: 0.9,
+      topK: 32,
+    },
+  });
 
-    let text = res.text.trim();
-    if (text.startsWith('```')) {
-      text = text.replace(/^```(?:json)?\s*/, '').replace(/```$/, '').trim();
-    }
-
-    const parsed = JSON.parse(text) as GeminiAnalysisResponseSchema;
-    if (
-      typeof parsed.summaryText !== 'string' ||
-      !Array.isArray(parsed.keyInsights) ||
-      !Array.isArray(parsed.chartSuggestions) ||
-      !Array.isArray(parsed.actionableRecommendations) ||
-      typeof parsed.visualizationThemeSuggestion !== 'object'
-    ) {
-      throw new Error('Das JSON-Schema der KI-Antwort stimmt nicht.');
-    }
-    return parsed;
-  } catch (err: any) {
-    let msg = 'Fehler bei der Kommunikation mit der KI.';
-    if (err.message) msg += ` ${err.message}`;
-    if (err instanceof SyntaxError) msg = 'Ungültiges JSON von der KI.';
-    throw new Error(msg);
+  let text = res.text.trim();
+  // Entferne ggf. Codefences
+  if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json)?\s*/, '').replace(/```$/, '').trim();
   }
+
+  const parsed = JSON.parse(text) as GeminiAnalysisResponseSchema;
+  // Schema-Validierung
+  if (
+    typeof parsed.summaryText !== 'string' ||
+    !Array.isArray(parsed.keyInsights) ||
+    !Array.isArray(parsed.chartSuggestions) ||
+    !Array.isArray(parsed.actionableRecommendations) ||
+    typeof parsed.visualizationThemeSuggestion !== 'object'
+  ) {
+    throw new Error('Antwort der KI entspricht nicht dem erwarteten JSON-Schema.');
+  }
+
+  return parsed;
 };
 
-/** Chat-Funktion: prozentualer Rückgang Feb→März auf Pivot-Daten */
+/**
+ * Chat-Funktion: Berechnet auf den pivotierten Daten
+ * den prozentualen Rückgang von Feb 2025 zu Mär 2025
+ */
 export const askGeminiAboutData = async (
-  parsedData: ParsedData[],
+  pivotData: ParsedData[],
   fileName: string,
   question: string
 ): Promise<string> => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Gemini API Key ist nicht konfiguriert.');
-
-  const aggregated = parsedData;
+  if (!apiKey) {
+    throw new Error('Gemini API Key ist nicht konfiguriert.');
+  }
 
   const prompt = `
-Du bist ein professioneller Datenanalyst. Du erhältst ein Array mit Objekten:
+Du bist ein professioneller Datenanalyst. Du bekommst ein Array von Objekten:
 - month: "YYYY-MM"
 - region: String
 - revenue: Zahl
 
-**Aufgabe:** Berechne für jede Region den Prozent-Unterschied zwischen Februar 2025 ("2025-02") und März 2025 ("2025-03") und gib **nur** die Region mit dem stärksten Rückgang aus – inkl. Prozentzahl.
+**Aufgabe:** Berechne für jede Region den prozentualen Umsatzunterschied zwischen Februar 2025 ("2025-02") und März 2025 ("2025-03").  
+Gib **nur** die Region mit dem stärksten Rückgang aus – inkl. Prozentzahl.
 
 Datei: "${fileName}"
 
 Daten:
 \`\`\`json
-${JSON.stringify(aggregated, null, 2)}
+${JSON.stringify(pivotData, null, 2)}
 \`\`\`
 
 Frage: ${question}
@@ -132,9 +138,9 @@ Frage: ${question}
     },
   });
 
-  let text = res.text.trim();
-  if (text.startsWith('```')) {
-    text = text.replace(/^```[\w]*\s*/, '').replace(/```$/, '').trim();
+  let answer = res.text.trim();
+  if (answer.startsWith('```')) {
+    answer = answer.replace(/^```[\s\S]*?```/, '').trim();
   }
-  return text;
+  return answer;
 };
