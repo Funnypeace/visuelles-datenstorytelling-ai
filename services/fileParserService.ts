@@ -10,7 +10,6 @@ function aggregateByMonthAndRegion(
   const map: Record<string, { month: string; region: string; revenue: number }> = {};
 
   rows.forEach((row) => {
-    // Datum parsen: wenn Excel-Date-Objekt, dann ISO-String, sonst einfach String
     const raw = (row as any).Datum;
     let dateString: string;
     if (raw instanceof Date) {
@@ -42,34 +41,31 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> => {
       if (!result) return reject(new Error('Fehler beim Lesen der Datei.'));
 
       try {
-        let raw: DataEntry[] = [];
+        let rawRows: DataEntry[] = [];
 
-        // --- CSV ---
+        // CSV
         if (file.name.endsWith('.csv') || file.type === 'text/csv') {
           const text = result as string;
           const { data } = Papa.parse<string[]>(text, { skipEmptyLines: true });
           const [headers, ...rows] = data;
-          raw = rows.map((r) => {
+          rawRows = rows.map((r) => {
             const obj: any = {};
             headers.forEach((h, i) => (obj[h] = r[i]));
             return obj as DataEntry;
           });
 
-        // --- XLSX ---
+        // XLSX
         } else {
           const arrayBuffer = result as ArrayBuffer;
-          // cellDates:true sorgt dafür, dass Excel-Datum als JS-Date-Objekt kommt
           const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
           const sheet = wb.Sheets[wb.SheetNames[0]];
-          // raw:false stellt sicher, dass Formate (insb. Datum) in Strings/Date kommen
-          raw = XLSX.utils.sheet_to_json<DataEntry>(sheet, {
+          rawRows = XLSX.utils.sheet_to_json<DataEntry>(sheet, {
             defval: null,
             raw: false,
           }) as DataEntry[];
         }
 
-        // Pivotieren und zurückgeben
-        const aggregated = aggregateByMonthAndRegion(raw);
+        const aggregated = aggregateByMonthAndRegion(rawRows);
         resolve(aggregated);
 
       } catch (err: any) {
@@ -79,7 +75,6 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> => {
 
     reader.onerror = () => reject(new Error('Datei-Lese-Fehler.'));
 
-    // Lesen starten
     if (file.name.endsWith('.csv') || file.type === 'text/csv') {
       reader.readAsText(file);
     } else {
