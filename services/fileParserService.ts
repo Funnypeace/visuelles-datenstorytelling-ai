@@ -3,7 +3,7 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import type { ParsedData, DataEntry } from '../types';
 
-/** Deutsche Monatsnamen in YYYY-MM umwandeln */
+/** Deutsche Monatsnamen in YYYY-MM umwandeln, wenn „Monat“ z. B. "Mai 2024" oder "Juni 2023" ist */
 const germanMonthNames = [
   'Januar',
   'Februar',
@@ -19,32 +19,71 @@ const germanMonthNames = [
   'Dezember',
 ];
 
-/** Pivotiert auf Monat × Region und summiert den Umsatz */
+/**
+ * Extrahiert aus einem Text wie "Mai 2024" o.ä. das Jahr und den Monat-Index.
+ * 
+ * @param rawMon Dieses Feld kommt aus row.Monat (z. B. "Mai 2024" oder nur "Mai").
+ * @returns { year: string, monthIndex: number } – monthIndex von 1–12; year ist vierstellig, falls nicht vorhanden, wird null zurückgegeben.
+ */
+function parseGermanMonthYear(rawMon: unknown): { year: string | null; monthIndex: number | null } {
+  if (rawMon == null) return { year: null, monthIndex: null };
+
+  const txt = String(rawMon).trim();
+  // Teile an Leerzeichen: ["Mai", "2024"] oder nur ["Mai"]
+  const parts = txt.split(/\s+/);
+  const monthName = parts[0];
+  const idx = germanMonthNames.indexOf(monthName);
+  if (idx < 0) {
+    return { year: null, monthIndex: null };
+  }
+
+  // Wenn nach dem Monatsnamen noch etwas folgt, nehmen wir das als Jahr an
+  let year: string | null = null;
+  if (parts.length > 1) {
+    // Suche in parts[1] nach vierstelliger Jahreszahl
+    const candidate = parts[1];
+    if (/^\d{4}$/.test(candidate)) {
+      year = candidate;
+    }
+  }
+
+  return { year, monthIndex: idx + 1 };
+}
+
+/** Pivotiert auf (Jahr-Monat) × Region und summiert den Umsatz */
 function aggregateByMonthAndRegion(
   rows: DataEntry[]
 ): { month: string; region: string; revenue: number }[] {
   const map: Record<string, { month: string; region: string; revenue: number }> = {};
 
   rows.forEach((row) => {
-    // In deiner Tabelle steht jetzt z.B. "Januar 2024" oder "Februar" im Feld "Monat"
+    // 1) Extrahiere Monat und Jahr aus row.Monat
     const rawMon = (row as any).Monat ?? '';
-    const monName = String(rawMon).split(' ')[0].trim(); 
-    const idx = germanMonthNames.indexOf(monName);
-    if (idx < 0) return; // Unbekannter Monatsname → überspringen
+    const { year, monthIndex } = parseGermanMonthYear(rawMon);
 
-    // Jahr fest auf 2025 – passe ggf. an, wenn dein Datensatz ein Jahr-Feld enthält
-    const year = '2025';
-    const monthKey = `${year}-${String(idx + 1).padStart(2, '0')}`; // z.B. "2025-02"
+    if (monthIndex == null) {
+      // Überspringe Zeilen, bei denen sich keine eindeutige Monatszahl ermitteln lässt
+      return;
+    }
 
-    // Region auslesen (oder "Gesamt", falls keine Region-Spalte existiert)
-    const region = (row as any).Region ? String((row as any).Region).trim() : 'Gesamt';
+    // Wenn kein Jahr im String angegeben, kann man hier als Fallback das aktuelle Jahr nehmen,
+    // oder ein Standardjahr. Wir verwenden null → überspringe, falls kein Jahr da ist.
+    if (!year) {
+      return;
+    }
 
-    // Umsatzzahl ("Umsatz" oder ein ähnlicher Key)
+    const monthKey = `${year}-${String(monthIndex).padStart(2, '0')}`; // Bsp.: "2024-05"
+
+    // 2) Region: Falls kein Feld 'Region' existiert, Default "Gesamt"
+    const region = (row as any).Region
+      ? String((row as any).Region).trim()
+      : 'Gesamt';
+
+    // 3) Umsatz auslesen: Zuerst `Umsatz`, sonst suche key mit "Umsatz" oder "Verkaufszahlen"
     let revenue = 0;
     if ((row as any).Umsatz !== undefined) {
       revenue = Number((row as any).Umsatz);
     } else {
-      // Fallback: suche nach Schlüssel, der "Umsatz" oder "Verkaufszahlen" enthält
       for (const key of Object.keys(row as any)) {
         if (/Umsatz|Verkaufszahlen/i.test(key)) {
           revenue = Number((row as any)[key]);
@@ -52,12 +91,14 @@ function aggregateByMonthAndRegion(
         }
       }
     }
+    if (isNaN(revenue)) revenue = 0;
 
-    const key = `${monthKey}|${region}`;
-    if (!map[key]) {
-      map[key] = { month: monthKey, region, revenue: 0 };
+    // 4) Key für Pivot: "YYYY-MM|Region"
+    const pivotKey = `${monthKey}|${region}`;
+    if (!map[pivotKey]) {
+      map[pivotKey] = { month: monthKey, region, revenue: 0 };
     }
-    map[key].revenue += isNaN(revenue) ? 0 : revenue;
+    map[pivotKey].revenue += revenue;
   });
 
   return Object.values(map);
@@ -69,12 +110,14 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> =>
 
     reader.onload = (e: ProgressEvent<FileReader>) => {
       const result = e.target?.result;
-      if (!result) return reject(new Error('Fehler beim Lesen der Datei.'));
+      if (!result) {
+        return reject(new Error('Fehler beim Lesen der Datei.'));
+      }
 
       try {
         let rawRows: DataEntry[] = [];
 
-        // CSV-Fall
+        // 1) CSV-Fall
         if (file.name.endsWith('.csv') || file.type === 'text/csv') {
           const text = result as string;
           const { data } = Papa.parse<string[]>(text, { skipEmptyLines: true });
@@ -86,10 +129,14 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> =>
             });
             return obj as DataEntry;
           });
+
+        // 2) XLSX-Fall
         } else {
-          // XLSX-Fall
-          const buffer = result as ArrayBuffer;
-          const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+          const arrayBuffer = result as ArrayBuffer;
+          const wb = XLSX.read(arrayBuffer, {
+            type: 'array',
+            cellDates: true,
+          });
           const sheet = wb.Sheets[wb.SheetNames[0]];
           rawRows = XLSX.utils.sheet_to_json<DataEntry>(sheet, {
             defval: null,
@@ -97,16 +144,20 @@ export const parseDataFile = (file: File): Promise<ParsedData[]> =>
           }) as DataEntry[];
         }
 
-        // Pivotieren auf Monat × Region
+        // 3) Pivotieren: Jedes Objekt → { month: "YYYY-MM", region, revenue }
         const aggregated = aggregateByMonthAndRegion(rawRows);
+
         resolve(aggregated);
       } catch (err: any) {
         reject(new Error('Verarbeitungsfehler: ' + err.message));
       }
     };
 
-    reader.onerror = () => reject(new Error('Datei-Lese-Fehler.'));
+    reader.onerror = () => {
+      reject(new Error('Datei-Lese-Fehler.'));
+    };
 
+    // Starte das Lesen der Datei (Text für CSV, ArrayBuffer für XLSX)
     if (file.name.endsWith('.csv') || file.type === 'text/csv') {
       reader.readAsText(file);
     } else {
